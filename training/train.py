@@ -1,8 +1,8 @@
 import argparse
-from ISR.train import Trainer
-from ISR.models import RRDN, RDN
-from ISR.models import Discriminator
-from ISR.models import Cut_VGG19
+from isr.ISR.train import Trainer
+from isr.ISR.models import RRDN, RDN
+from isr.ISR.models import Discriminator
+from isr.ISR.models import Cut_VGG19
 
 def train_rrdn(
     lr_train_dir,
@@ -20,6 +20,7 @@ def train_rrdn(
     patch_size=32,
     batch_size=8,
 ):
+    print('train rrdn')
     lr_train_patch_size = patch_size
     layers_to_extract = [5, 9]
     hr_train_patch_size = lr_train_patch_size * scale
@@ -75,7 +76,10 @@ def train_rrdn(
         epochs=epochs,
         steps_per_epoch=batches_per_epoch,
         batch_size=batch_size,
-        monitored_metrics={'val_PSNR_Y': 'max'}
+        monitored_metrics={
+            'val_generator_PSNR_Y': 'max',
+            'val_PSNR_Y': 'max',
+        }
     )
 
 def train_rdn(
@@ -94,6 +98,7 @@ def train_rdn(
     patch_size=32,
     batch_size=8,
 ):
+    print('train rdn')
     lr_train_patch_size = patch_size
     layers_to_extract = [5, 9]
     hr_train_patch_size = lr_train_patch_size * scale
@@ -153,12 +158,22 @@ def train_rdn(
     )
 
 if __name__ == '__main__':
+    print('training script')
     parser = argparse.ArgumentParser(description='Train ESRGAN')
     parser.add_argument('--model')
     parser.add_argument('--lr_train_dir')
     parser.add_argument('--lr_valid_dir')
     parser.add_argument('--hr_train_dir')
     parser.add_argument('--hr_valid_dir')
+    # 'C':2, 'D':3, 'G':32, 'G0':32, 'T':5,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T': 1,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T': 10,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T':10,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T':10,
+    # rdn-C3-D10-G64-G064-x2_PSNR_epoch134.hdf5
+    # rrdn-C4-D3-G32-G032-T10-x4_epoch299.hdf5
+    # rdn-C6-D20-G64-G064-x2_ArtefactCancelling_epoch219.hdf5
+    # rdn-C6-D20-G64-G064-x2_PSNR_epoch086.hdf5
     parser.add_argument('--C', type=int, default=6)
     parser.add_argument('--D', type=int, default=20)
     parser.add_argument('--G', type=int, default=64)
@@ -171,6 +186,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=8)
 
     args = parser.parse_args()
+    print(args)
     if args.model == 'rdn':
         train_rdn(
             args.lr_train_dir,
