@@ -1,5 +1,5 @@
 jobs:
-  CloneRepo:
+  CloneRepoTraining:
     resources:
       instance-type: C5
     outputs:
@@ -7,29 +7,62 @@ jobs:
         type: volume
     uses: git-checkout@v1
     with:
-      url: https://github.com/NVlabs/stylegan2.git
-  StyleGan2:
+      url: https://github.com/thekevinscott/test-train-esrgan.git
+  ESRGAN:
     resources:
-      instance-type: P4000
+      instance-type: P6000
     needs:
-      - CloneRepo
+      - CloneRepoTraining
     inputs:
-      repo: CloneRepo.outputs.repo
-    outputs:
-      generatedFaces:
+      trainingrepo: CloneRepoTraining.outputs.repo
+      data:
         type: dataset
         with:
-          ref: dstv0qsnl4fpsw4
+          ref: dsizlikci63ycir
+    outputs:
+      model:
+        type: dataset
+        with:
+          ref: ds65of0rmhs7ao5
     uses: script@v1
     with:
       script: |-
-        pip install scipy==1.3.3
-        pip install requests==2.22.0
-        pip install Pillow==6.2.1
-        cd /inputs/repo
-        python run_generator.py generate-images \
-          --network=gdrive:networks/stylegan2-ffhq-config-f.pkl \
-          --seeds=6600-6605 \
-          --truncation-psi=0.5 \
-          --result-dir=/outputs/generatedFaces
-      image: tensorflow/tensorflow:1.14.0-gpu-py3
+        echo 'Training script start, run setup'
+        python3 --version
+        python3 -m pip install --upgrade pip
+
+        echo '***** ls /inputs/data *****'
+        ls /inputs/data
+
+        cd /inputs/trainingrepo/training
+        git submodule update --init
+
+        echo '***** ls /inputs/trainingrepo/training *****'
+        ls
+
+        cd /inputs/trainingrepo/training/isr
+        echo '***** ls /inputs/trainingrepo/training/isr *****'
+        ls
+
+        echo '***** building ISR *****'
+        python3 setup.py install
+        python3 -m pip uninstall numpy
+        python3 -m pip install numpy==1.21.5 
+        python3 -m pip install 'h5py==2.10.0' --force-reinstall
+        python3 -m pip install imageio pyaml
+        cd ..
+        echo '***** echo out current directory *****'
+        ls
+
+        echo '***** begin training *****'
+        python3 \
+        train.py \
+          --hr_train_dir='/inputs/data/DIV2K_train_HR' \
+          --hr_valid_dir='/inputs/data/DIV2K_valid_HR' \
+          --lr_train_dir='/inputs/data/DIV2K_train_LR_mild' \
+          --lr_valid_dir='/inputs/data/DIV2K_valid_LR_mild' \
+          --model='rrdn' \
+          --batch_size=4 \
+          --batches_per_epoch=100 \
+          --epochs=1 
+      image: thekevinscott/tensorflow-2.2.3-gpu-py3
