@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import pprint
+import json
 import pathlib
 import os
 import argparse
@@ -19,19 +20,23 @@ pp = pprint.PrettyPrinter(indent=4)
 
 ROOT = pathlib.Path('/opt/ml')
 CODE = pathlib.Path('/code')
-INPUT = ROOT / 'input/data/data'
+INPUT = ROOT / 'input/data/inputData'
+HYPERPARAMETERS_PATH = ROOT / 'input/config/hyperparameters.json'
 OUTPUT = ROOT / 'output'
 CHECKPOINTS = ROOT / 'checkpoints'
 MODEL = ROOT / 'model'
 
 for d in [
-    # CODE,
     ROOT,
-    INPUT,
+    ROOT / 'input',
     ROOT / 'input/data',
-    OUTPUT,
 ]:
     print(str(d), os.listdir(str(d)))
+
+with open(HYPERPARAMETERS_PATH, 'r') as f:
+    HYPERPARAMETERS = json.load(f)
+print('hyperparams', HYPERPARAMETERS)
+
 
 def train_rrdn(
     lr_train_dir,
@@ -285,25 +290,7 @@ def run_inference(args):
                 sr_img.save(str(imgsavepath))
         return
 
-        #     print('model weight', model_weight)
-        #     print('generator weight', generator_weight)
-        #     weight_path = timestamp_dir_path / model_weight
-        #     print(f'Loading weight for path {weight_path}')
-        #     base_model.model.load_weights(weight_path)
-        #     print(f'Loaded weight for path {weight_path}')
-        #     print(os.listdir(CODE / 'data/input/sample'))
-        #     for imgname in os.listdir(CODE / 'data/input/sample'):
-        #         print('imgname', imgname)
-        #         imgpath = str(CODE / 'data/input/sample' / imgpath)
-        #         print('imgpath', imgpath)
-        #         img = Image.open(imgpath)
-        #         lr_img = np.array(img)
-        #         sr_img = Image.fromarray(base_model.predict(lr_img))
-        #         imgsavepath = str(OUTPUT / 'samples' / weight / imgname)
-        #         print('imgsavepath', imgsavepath)
-        #         sr_img.save(imgsavepath)
-
-def main():
+def main(args):
     start = datetime.datetime.now()
     if args.model == 'rdn':
         train_rdn(
@@ -347,7 +334,7 @@ def main():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train ESRGAN')
-    parser.add_argument('--model', default='rrdn')
+    parser.add_argument('--model', default=HYPERPARAMETERS.get('model', 'rrdn'))
     parser.add_argument('--lr_train_dir', default=str(INPUT / 'DIV2K_train_LR_bicubic/X2'))
     parser.add_argument('--lr_valid_dir', default=str(INPUT / 'DIV2K_valid_LR_bicubic/X2'))
     parser.add_argument('--hr_train_dir', default=str(INPUT / 'DIV2K_train_HR'))
@@ -361,18 +348,18 @@ if __name__ == '__main__':
     # rrdn-C4-D3-G32-G032-T10-x4_epoch299.hdf5
     # rdn-C6-D20-G64-G064-x2_ArtefactCancelling_epoch219.hdf5
     # rdn-C6-D20-G64-G064-x2_PSNR_epoch086.hdf5
-    parser.add_argument('--C', type=int, default=6)
-    parser.add_argument('--D', type=int, default=20)
-    parser.add_argument('--G', type=int, default=64)
-    parser.add_argument('--T', type=int, default=10)
-    parser.add_argument('--G0', type=int, default=64)
-    parser.add_argument('--epochs', type=int, default=1) # 300
-    parser.add_argument('--scale', type=int, default=2)
-    parser.add_argument('--batches_per_epoch', type=int, default=1) # 1000
-    parser.add_argument('--patch_size', type=int, default=16) # 32
-    parser.add_argument('--batch_size', type=int, default=2) # 8
+    parser.add_argument('--C', type=int, default=HYPERPARAMETERS.get('C', '6')) # 2 or 3 or 4 or 6
+    parser.add_argument('--D', type=int, default=HYPERPARAMETERS.get('D', '20')) # 3 or 10 or 20
+    parser.add_argument('--G', type=int, default=HYPERPARAMETERS.get('G', '64')) # 32 or 64
+    parser.add_argument('--T', type=int, default=HYPERPARAMETERS.get('T', '10')) #1 or 5 or 10
+    parser.add_argument('--G0', type=int, default=HYPERPARAMETERS.get('G0', '64')) #32 or 64
+    parser.add_argument('--epochs', type=int, default=HYPERPARAMETERS.get('epochs', '1')) # 300
+    parser.add_argument('--scale', type=int, default=HYPERPARAMETERS.get('scale', '2')) # 2
+    parser.add_argument('--batches_per_epoch', type=int, default=HYPERPARAMETERS.get('batches_per_epoch', '1')) # 1000
+    parser.add_argument('--patch_size', type=int, default=HYPERPARAMETERS.get('patch_size', '16')) # 16 or 32 or 64
+    parser.add_argument('--batch_size', type=int, default=HYPERPARAMETERS.get('batch_size', '2')) # 4 or 8 or 16 or 32
 
     args = parser.parse_args()
     print('training script', args)
-    # main(args)
+    main(args)
     run_inference(args)
