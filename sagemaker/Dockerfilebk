@@ -1,0 +1,56 @@
+FROM tensorflow/tensorflow:2.3.0-gpu
+
+# Apt dependencies
+RUN apt-get update && apt-get install -y \
+  git \
+  wget \
+  curl \
+  less \
+  vim \
+  python3-venv
+
+# Set up user
+# RUN useradd -ms /bin/bash dockeruser
+# USER dockeruser
+# WORKDIR /home/dockeruser
+
+# Virtualenv for python
+# RUN python3 -m venv env
+# RUN source env/bin/activate
+
+# Python dependencies
+RUN python3 -m pip install --upgrade pip
+# RUN python3 -m pip install tqdm==4.48.0 loguru==0.5.1 pyyaml==5.3.1 imageio==2.9.0 tensorflow-model-optimization==0.4.0
+
+## installing it as library
+# RUN pip3 install ISR
+
+## installing from source
+# RUN python3 -m pip uninstall -y \
+#   numpy
+# RUN python3 -m pip install \
+#   numpy==1.19.2 \
+#   imageio \
+#   pyaml
+# RUN python3 -m pip uninstall -y \
+#   h5py
+# RUN pip install --force-reinstall \
+#   h5py==2.10.0 \
+#   six==1.15.0
+
+RUN python3 -m venv env
+RUN ls ./
+RUN ls ./env
+RUN source env/bin/activate
+
+WORKDIR /code
+# RUN git clone https://github.com/thekevinscott/image-super-resolution.git /code
+RUN git clone https://github.com/idealo/image-super-resolution /code
+RUN pip install --force-reinstall \
+  numpy==1.19.2 \
+  six==1.15.0 \
+  h5py==2.10.0
+RUN python3 setup.py install
+
+COPY src /code
+ENV PATH "$PATH:/code"
