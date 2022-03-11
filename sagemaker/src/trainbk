@@ -1,0 +1,19 @@
+#!/usr/bin/python3
+
+import pathlib
+import os
+import argparse
+from ISR.train import Trainer
+from ISR.models import RRDN, RDN
+from ISR.models import Discriminator
+from ISR.models import Cut_VGG19
+
+ROOT = pathlib.Path('/opt/ml')
+CODE = pathlib.Path('/code')
+INPUT = ROOT / 'input/data/data'
+OUTPUT = ROOT / 'output'
+CHECKPOINTS = ROOT / 'checkpoints'
+MODEL = ROOT / 'model'
+
+for d in [INPUT]:
+    print(str(d), os.listdir(str(d)))

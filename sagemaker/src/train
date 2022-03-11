@@ -1,0 +1,378 @@
+#!/usr/bin/python3
+
+import pprint
+import pathlib
+import os
+import argparse
+import datetime
+from ISR.train import Trainer
+from ISR.models import RRDN, RDN
+from ISR.models import Discriminator
+from ISR.models import Cut_VGG19
+import numpy as np
+import yaml
+from PIL import Image
+from argparse import Namespace
+from types import SimpleNamespace
+
+pp = pprint.PrettyPrinter(indent=4)
+
+ROOT = pathlib.Path('/opt/ml')
+CODE = pathlib.Path('/code')
+INPUT = ROOT / 'input/data/data'
+OUTPUT = ROOT / 'output'
+CHECKPOINTS = ROOT / 'checkpoints'
+MODEL = ROOT / 'model'
+
+for d in [
+    # CODE,
+    ROOT,
+    INPUT,
+    ROOT / 'input/data',
+    OUTPUT,
+]:
+    print(str(d), os.listdir(str(d)))
+
+def train_rrdn(
+    lr_train_dir,
+    lr_valid_dir,
+    hr_train_dir,
+    hr_valid_dir,
+    C=6,
+    D=20,
+    G=64,
+    G0=64,
+    T=10,
+    epochs=300,
+    scale=4,
+    batches_per_epoch=1000,
+    patch_size=32,
+    batch_size=8,
+):
+    print('train rrdn')
+    lr_train_patch_size = patch_size
+    layers_to_extract = [5, 9]
+    hr_train_patch_size = lr_train_patch_size * scale
+    arch_params = {
+        'C': C,
+        'D': D,
+        'G': G,
+        'G0':G0,
+        'T':T,
+        'x':scale
+    }
+    rrdn  = RRDN(arch_params=arch_params, patch_size=lr_train_patch_size)
+    f_ext = Cut_VGG19(patch_size=hr_train_patch_size, layers_to_extract=layers_to_extract)
+    discr = Discriminator(patch_size=hr_train_patch_size, kernel_size=3)
+
+    loss_weights = {
+        'generator': 0.0,
+        'feature_extractor': 0.0833,
+        'discriminator': 0.01
+    }
+    losses = {
+        'generator': 'mae',
+        'feature_extractor': 'mse',
+        'discriminator': 'binary_crossentropy'
+    }
+
+    log_dirs = {'logs': str(OUTPUT / 'logs'), 'weights': str(OUTPUT / 'weights')}
+    for _, directorypath in log_dirs.items():
+        pathlib.Path(directorypath).mkdir(parents=True, exist_ok=True)
+    print('log dirs', log_dirs)
+    log_dir = log_dirs['logs']
+    print(log_dir)
+    with open(log_dir + '/foo.txt', 'w') as f:
+        f.write('foo')
+
+    learning_rate = {'initial_value': 0.0004, 'decay_factor': 0.5, 'decay_frequency': 30}
+
+    flatness = {'min': 0.0, 'max': 0.15, 'increase': 0.01, 'increase_frequency': 5}
+
+    adam_optimizer = {'beta1': 0.9, 'beta2': 0.999, 'epsilon': None}
+
+    trainer = Trainer(
+        generator=rrdn,
+        discriminator=discr,
+        feature_extractor=f_ext,
+        lr_train_dir=lr_train_dir,
+        hr_train_dir=hr_train_dir,
+        lr_valid_dir=lr_valid_dir,
+        hr_valid_dir=hr_valid_dir,
+        loss_weights=loss_weights,
+        learning_rate=learning_rate,
+        flatness=flatness,
+        dataname='div2k',
+        log_dirs=log_dirs,
+        weights_generator=None,
+        weights_discriminator=None,
+        n_validation=40,
+        adam_optimizer=adam_optimizer,
+    )
+
+    print(f'Starting training now for {epochs} epochs')
+    trainer.train(
+        epochs=epochs,
+        steps_per_epoch=batches_per_epoch,
+        batch_size=batch_size,
+        monitored_metrics={
+            'val_generator_PSNR_Y': 'max',
+            'val_PSNR_Y': 'max',
+            'val_generator_loss': 'min',
+        }
+    )
+
+def train_rdn(
+    lr_train_dir,
+    lr_valid_dir,
+    hr_train_dir,
+    hr_valid_dir,
+    C=6,
+    D=20,
+    G=64,
+    G0=64,
+    T=10,
+    epochs=86,
+    scale=4,
+    batches_per_epoch=1000,
+    patch_size=32,
+    batch_size=8,
+):
+    print('train rdn')
+    lr_train_patch_size = patch_size
+    layers_to_extract = [5, 9]
+    hr_train_patch_size = lr_train_patch_size * scale
+    arch_params = {
+        'C': C, 
+        'D': D, 
+        'G': G, 
+        'G0':G0, 
+        'T':T, 
+        'x':scale
+    }
+    rdn  = RDN(arch_params=arch_params, patch_size=lr_train_patch_size)
+    f_ext = Cut_VGG19(patch_size=hr_train_patch_size, layers_to_extract=layers_to_extract)
+    discr = Discriminator(patch_size=hr_train_patch_size, kernel_size=3)
+
+    loss_weights = {
+        'generator': 0.0,
+        'feature_extractor': 0.0833,
+        'discriminator': 0.01
+    }
+    losses = {
+        'generator': 'mae',
+        'feature_extractor': 'mse',
+        'discriminator': 'binary_crossentropy'
+    }
+
+    log_dirs = {'logs': str(OUTPUT / 'logs'), 'weights': str(OUTPUT / 'weights')}
+    print('log dirs', log_dirs)
+
+    learning_rate = {'initial_value': 0.0004, 'decay_factor': 0.5, 'decay_frequency': 30}
+
+    flatness = {'min': 0.0, 'max': 0.15, 'increase': 0.01, 'increase_frequency': 5}
+
+    trainer = Trainer(
+        generator=rdn,
+        discriminator=discr,
+        feature_extractor=f_ext,
+        lr_train_dir=lr_train_dir,
+        hr_train_dir=hr_train_dir,
+        lr_valid_dir=lr_valid_dir,
+        hr_valid_dir=hr_valid_dir,
+        loss_weights=loss_weights,
+        learning_rate=learning_rate,
+        flatness=flatness,
+        dataname='image_dataset',
+        log_dirs=log_dirs,
+        weights_generator=None,
+        weights_discriminator=None,
+        n_validation=40,
+    )
+
+    print(f'Starting training now for {epochs} epochs')
+    trainer.train(
+        epochs=epochs,
+        steps_per_epoch=batches_per_epoch,
+        batch_size=batch_size,
+        monitored_metrics={'val_PSNR_Y': 'max'}
+    )
+
+def get_model(args):
+    if args.model == 'rdn':
+        print('Loading RDN model for inference')
+        return RDN(arch_params={'C':args.C, 'D':args.D, 'G':args.G, 'G0':args.G0, 'T': args.T, 'x':args.x})
+    elif args.model == 'rrdn':
+        print('Loading RRDN model for inference')
+        return RRDN(arch_params={'C':args.C, 'D':args.D, 'G':args.G, 'G0':args.G0, 'T': args.T, 'x':args.x})
+    raise Exception(f'No valid model found for {args.model}')
+
+def get_files(directory):
+    model_weight = None
+    generator_weight = None
+    config = None
+    for file in os.listdir(directory):
+        if file.startswith('rdn') or file.startswith('rrdn'):
+            model_weight = file
+        elif file.startswith('srgan') or 'generator' in file:
+            generator_weight = file
+        elif file.endswith('yml'):
+            with open(directory / file, 'r') as f:
+                config = yaml.load(f, Loader=yaml.Loader)
+    if model_weight is None:
+        print(f'Could not find model weight in {directory}', os.listdir(directory))
+    elif generator_weight is None:
+        print(f'Could not find generator weight in {directory}', os.listdir(directory))
+    elif config is None:
+        print(f'Could not config file in {directory}', os.listdir(directory))
+
+    return model_weight, generator_weight, config
+# ['srgan-large_best-val_generator_PSNR_Y_epoch001.hdf5', 'rrdn-C6-D20-G64-G010-T64-x2_best-val_generator_PSNR_Y_epoch001.hdf5', 'session_config.yml']
+
+def get_config_files_for_directory(directory):
+    for timestamp in os.listdir(directory):
+        config_file_path = directory / timestamp / 'session_config.yml'
+        if os.path.exists(config_file_path) is False:
+            raise Exception(f'No file found for {config_file_path}')
+
+        with open(config_file_path, 'r') as f:
+            config = yaml.load(f, Loader=yaml.Loader)
+
+        config = config.get(timestamp)
+
+        discriminator = config.get('discriminator')
+        feature_extractor = config.get('feature_extractor')
+        generator = config.get('generator')
+        training_parameters = config.get('training_parameters')
+
+        yield training_parameters, generator, discriminator, feature_extractor
+
+        #     # {   'discriminator': {'name': 'srgan-large', 'weights_discriminator': None},
+    # # 'feature_extractor': {'layers': [5, 9], 'name': 'vgg19'},
+    # # 'generator': {   'name': 'rrdn',
+        #     #          'parameters': {   'C': 6,
+        #     #                            'D': 20,
+        #     #                            'G': 64,
+        #     #                            'G0': 10,
+        #     #                            'T': 64,
+        #     #                            'x': 2},
+        #     #          'weights_generator': None},
+    # # 'training_parameters'
+        #     return
+        #     print('config', pp.pprint(config.get(timestamp_dir)))
+
+def load_sample_images():
+    directory = CODE / 'data/input/sample'
+    for imgname in os.listdir(directory):
+        img = Image.open(directory / imgname)
+        lr_img = np.array(img)
+        yield lr_img, imgname
+
+
+def run_inference(args):
+    weights_dir = OUTPUT / 'weights'
+    for weight in os.listdir(weights_dir):
+        weight_path_directory = weights_dir / weight
+        for training_parameters, generator, discriminator, feature_extractor in get_config_files_for_directory(weight_path_directory):
+            params = generator.get('parameters')
+            model = get_model(SimpleNamespace(**params, model=generator.get('name')))
+            for lr_img, imgname in load_sample_images():
+                img_directory = OUTPUT / 'samples' / weight
+                img_directory.mkdir(exist_ok=True, parents=True)
+                imgsavepath = img_directory / imgname
+                print('saving image to', imgsavepath)
+                sr_img = Image.fromarray(model.predict(lr_img))
+                sr_img.save(str(imgsavepath))
+        return
+
+        #     print('model weight', model_weight)
+        #     print('generator weight', generator_weight)
+        #     weight_path = timestamp_dir_path / model_weight
+        #     print(f'Loading weight for path {weight_path}')
+        #     base_model.model.load_weights(weight_path)
+        #     print(f'Loaded weight for path {weight_path}')
+        #     print(os.listdir(CODE / 'data/input/sample'))
+        #     for imgname in os.listdir(CODE / 'data/input/sample'):
+        #         print('imgname', imgname)
+        #         imgpath = str(CODE / 'data/input/sample' / imgpath)
+        #         print('imgpath', imgpath)
+        #         img = Image.open(imgpath)
+        #         lr_img = np.array(img)
+        #         sr_img = Image.fromarray(base_model.predict(lr_img))
+        #         imgsavepath = str(OUTPUT / 'samples' / weight / imgname)
+        #         print('imgsavepath', imgsavepath)
+        #         sr_img.save(imgsavepath)
+
+def main():
+    start = datetime.datetime.now()
+    if args.model == 'rdn':
+        train_rdn(
+            args.lr_train_dir,
+            args.lr_valid_dir,
+            args.hr_train_dir,
+            args.hr_valid_dir,
+            args.C,
+            args.D,
+            args.G,
+            args.T,
+            args.G0,
+            args.epochs,
+            args.scale,
+            args.batches_per_epoch,
+            args.patch_size,
+            args.batch_size,
+        )
+    elif args.model == 'rrdn':
+        train_rrdn(
+            args.lr_train_dir,
+            args.lr_valid_dir,
+            args.hr_train_dir,
+            args.hr_valid_dir,
+            args.C,
+            args.D,
+            args.G,
+            args.T,
+            args.G0,
+            args.epochs,
+            args.scale,
+            args.batches_per_epoch,
+            args.patch_size,
+            args.batch_size,
+        )
+    else:
+        raise Exception(f'Unsupported model {args.model}')
+    elapsed_time = datetime.datetime.now() - start
+    print('Elapsed seconds', elapsed_time.total_seconds())
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train ESRGAN')
+    parser.add_argument('--model', default='rrdn')
+    parser.add_argument('--lr_train_dir', default=str(INPUT / 'DIV2K_train_LR_bicubic/X2'))
+    parser.add_argument('--lr_valid_dir', default=str(INPUT / 'DIV2K_valid_LR_bicubic/X2'))
+    parser.add_argument('--hr_train_dir', default=str(INPUT / 'DIV2K_train_HR'))
+    parser.add_argument('--hr_valid_dir', default=str(INPUT / 'DIV2K_valid_HR'))
+    # 'C':2, 'D':3, 'G':32, 'G0':32, 'T':5,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T': 1,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T': 10,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T':10,
+    # 'C':4, 'D':3, 'G':32, 'G0':32, 'T':10,
+    # rdn-C3-D10-G64-G064-x2_PSNR_epoch134.hdf5
+    # rrdn-C4-D3-G32-G032-T10-x4_epoch299.hdf5
+    # rdn-C6-D20-G64-G064-x2_ArtefactCancelling_epoch219.hdf5
+    # rdn-C6-D20-G64-G064-x2_PSNR_epoch086.hdf5
+    parser.add_argument('--C', type=int, default=6)
+    parser.add_argument('--D', type=int, default=20)
+    parser.add_argument('--G', type=int, default=64)
+    parser.add_argument('--T', type=int, default=10)
+    parser.add_argument('--G0', type=int, default=64)
+    parser.add_argument('--epochs', type=int, default=1) # 300
+    parser.add_argument('--scale', type=int, default=2)
+    parser.add_argument('--batches_per_epoch', type=int, default=1) # 1000
+    parser.add_argument('--patch_size', type=int, default=16) # 32
+    parser.add_argument('--batch_size', type=int, default=2) # 8
+
+    args = parser.parse_args()
+    print('training script', args)
+    # main(args)
+    run_inference(args)
