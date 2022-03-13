@@ -8,9 +8,11 @@ from ISR.train import Trainer
 from ISR.models import RRDN, RDN
 from ISR.models import Discriminator
 from ISR.models import Cut_VGG19
+from utils import prepare_data
 
 pp = pprint.PrettyPrinter(indent=4)
 
+INTERNAL_DATA = pathlib.Path('/data')
 ROOT = pathlib.Path('/opt/ml')
 CODE = pathlib.Path('/code')
 INPUT = ROOT / 'input/data/inputData'
@@ -28,6 +30,7 @@ CHECKPOINTS.mkdir(exist_ok=True, parents=True)
 MODEL.mkdir(exist_ok=True, parents=True)
 LOGS_DIR.mkdir(exist_ok=True, parents=True)
 WEIGHTS_DIR.mkdir(exist_ok=True, parents=True)
+INTERNAL_DATA.mkdir(exist_ok=True, parents=True)
 
 with open(OUTPUT / 'output-sample-file.txt', 'w') as f:
     f.write('foo')
@@ -169,16 +172,15 @@ def train(
     generator,
     args,
 ):
-    print('train')
-    lr_train_dir=args.lr_train_dir
-    lr_valid_dir=args.lr_valid_dir
-    hr_train_dir=args.hr_train_dir
-    hr_valid_dir=args.hr_valid_dir
+    hr_train_dir=pathlib.Path(args.hr_train_dir)
+    hr_valid_dir=pathlib.Path(args.hr_valid_dir)
     epochs=args.epochs
     scale=args.scale
     batches_per_epoch=args.batches_per_epoch
     patch_size=args.patch_size
     batch_size=args.batch_size
+    n_validation = args.n_validation
+    compression_quality = args.compression_quality
 
     lr_train_patch_size = patch_size
     layers_to_extract = [5, 9]
@@ -212,15 +214,23 @@ def train(
     else:
         print('Checkpoint was not found for weights discriminator, starting from scratch')
     print('****************************************')
+    print('Preparing data')
+    train_dirs, valid_dirs = prepare_data([
+        (hr_train_dir, INTERNAL_DATA / 'train'),
+        (hr_valid_dir, INTERNAL_DATA / 'valid'),
+    ], scale=scale, quality=compression_quality)
+    processed_hr_train_dir, processed_lr_train_dir = train_dirs
+    processed_hr_valid_dir, processed_lr_valid_dir = valid_dirs
+    print('****************************************')
 
     trainer = Trainer(
         generator=generator,
         discriminator=discr,
         feature_extractor=f_ext,
-        lr_train_dir=lr_train_dir,
-        hr_train_dir=hr_train_dir,
-        lr_valid_dir=lr_valid_dir,
-        hr_valid_dir=hr_valid_dir,
+        lr_train_dir=processed_lr_train_dir,
+        hr_train_dir=processed_hr_train_dir,
+        lr_valid_dir=processed_lr_valid_dir,
+        hr_valid_dir=processed_hr_valid_dir,
         loss_weights=loss_weights,
         losses=losses,
         learning_rate=learning_rate,
@@ -229,7 +239,7 @@ def train(
         log_dirs=log_dirs,
         weights_generator=weights_generator,
         weights_discriminator=weights_discriminator,
-        n_validation=40,
+        n_validation=n_validation,
     )
 
     print(f'Starting training now for {epochs} epochs')
@@ -288,11 +298,19 @@ def get_model(args):
     raise Exception(f'No valid model found for {args.model}')
 
 def main(args):
+    with open(OUTPUT / 'args.json', 'w') as f:
+        args_config = vars(args)
+        f.write(json.dumps(args_config))
     start = datetime.datetime.now()
     generator = get_model(args)
     train(generator, args)
     elapsed_time = datetime.datetime.now() - start
     print('Elapsed seconds', elapsed_time.total_seconds())
+    with open(OUTPUT / 'output.json', 'w') as f:
+        output_config = {
+            'total_seconds': elapsed_time.total_seconds()
+        }
+        f.write(json.dumps(output_config))
 
 
 if __name__ == '__main__':
@@ -307,8 +325,8 @@ if __name__ == '__main__':
     # rdn-C6-D20-G64-G064-x2_ArtefactCancelling_epoch219.hdf5
     # rdn-C6-D20-G64-G064-x2_PSNR_epoch086.hdf5
     for key, default, type in [
-        ('lr_train_dir', str(INPUT / 'DIV2K_train_LR_bicubic/X2'), str),
-        ('lr_valid_dir', str(INPUT / 'DIV2K_valid_LR_bicubic/X2'), str),
+        # ('lr_train_dir', str(INPUT / 'DIV2K_train_LR_bicubic/X2'), str),
+        # ('lr_valid_dir', str(INPUT / 'DIV2K_valid_LR_bicubic/X2'), str),
         ('hr_train_dir', str(INPUT / 'DIV2K_train_HR'), str),
         ('hr_valid_dir', str(INPUT / 'DIV2K_valid_HR'), str),
         ('model', 'rrdn', str),
@@ -331,6 +349,8 @@ if __name__ == '__main__':
         ('loss_weight_feature_extractor', '0.0', float),
         ('lr_decay_factor', '0.5', float),
         ('lr_decay_frequency', '100', int),
+        ('n_validation', '40', int),
+        ('compression_quality', '50', int),
     ]:
         parser.add_argument(f'--{key}', type=type, default=HYPERPARAMETERS.get(key, default))
 

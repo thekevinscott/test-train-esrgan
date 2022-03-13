@@ -1,2 +1,9 @@
 .volumes
 .bronco
+volumes
+volumes.earlymarchtraining
+.mypy_cache
+.pytest_cache
+.vscode
+env
+__pycache__
