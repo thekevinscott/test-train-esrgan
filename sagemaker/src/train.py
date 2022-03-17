@@ -1,4 +1,6 @@
 import pprint
+import numpy as np
+import math
 import json
 import pathlib
 import os
@@ -9,8 +11,14 @@ from ISR.models import RRDN, RDN
 from ISR.models import Discriminator
 from ISR.models import Cut_VGG19
 from utils import prepare_data
+import tensorflow as tf
 
-pp = pprint.PrettyPrinter(indent=4)
+print('================================================================')
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+print('================================================================')
+
+
+# pp = pprint.PrettyPrinter(indent=4)
 
 INTERNAL_DATA = pathlib.Path('/data')
 ROOT = pathlib.Path('/opt/ml')
@@ -32,15 +40,11 @@ LOGS_DIR.mkdir(exist_ok=True, parents=True)
 WEIGHTS_DIR.mkdir(exist_ok=True, parents=True)
 INTERNAL_DATA.mkdir(exist_ok=True, parents=True)
 
-with open(OUTPUT / 'output-sample-file.txt', 'w') as f:
-    f.write('foo')
-with open(MODEL / 'model-sample-file.txt', 'w') as f:
-    f.write('foo')
-
 log_dirs = {'logs': str(LOGS_DIR), 'weights': str(WEIGHTS_DIR)}
 for d in [
-    '/opt/ml/input/data/inputData/DIV2K_valid_LR_bicubic',
-    '/opt/ml/input/data/inputData/DIV2K_valid_LR_bicubic/X2',
+    '/opt/ml/input/data/inputData/',
+    '/opt/ml/input/data/inputData/train',
+    '/opt/ml/input/data/inputData/train/hr',
     CHECKPOINTS,
     WEIGHTS_DIR,
 ]:
@@ -49,90 +53,9 @@ for d in [
 with open(HYPERPARAMETERS_PATH, 'r') as f:
     HYPERPARAMETERS = json.load(f)
 
+print('********************************************************')
 print('hyperparams', HYPERPARAMETERS)
-
-
-# def train_rrdn(
-#     args,
-# ):
-#     lr_train_dir=args.lr_train_dir
-#     lr_valid_dir=args.lr_valid_dir
-#     hr_train_dir=args.hr_train_dir
-#     hr_valid_dir=args.hr_valid_dir
-#     C=args.C
-#     D=args.D
-#     G=args.G
-#     T=args.T
-#     G0=args.G0
-#     epochs=args.epochs
-#     scale=args.scale
-#     batches_per_epoch=args.batches_per_epoch
-#     patch_size=args.patch_size
-#     batch_size=args.batch_size
-#     print('train rrdn')
-#     lr_train_patch_size = patch_size
-#     layers_to_extract = [5, 9]
-#     hr_train_patch_size = lr_train_patch_size * scale
-#     arch_params = {
-#         'C': C,
-#         'D': D,
-#         'G': G,
-#         'G0':G0,
-#         'T':T,
-#         'x':scale
-#     }
-#     generator  = RRDN(arch_params=arch_params, patch_size=lr_train_patch_size)
-#     f_ext = Cut_VGG19(patch_size=hr_train_patch_size, layers_to_extract=layers_to_extract)
-#     discr = Discriminator(patch_size=hr_train_patch_size, kernel_size=3)
-
-#     loss_weights = {
-#         'generator': 0.0,
-#         'feature_extractor': 0.0833,
-#         'discriminator': 0.01
-#     }
-#     losses = {
-#         'generator': 'mae',
-#         'feature_extractor': 'mse',
-#         'discriminator': 'binary_crossentropy'
-#     }
-
-#     learning_rate = {'initial_value': 0.0004, 'decay_factor': 0.5, 'decay_frequency': 30}
-
-#     flatness = {'min': 0.0, 'max': 0.15, 'increase': 0.01, 'increase_frequency': 5}
-
-#     adam_optimizer = {'beta1': 0.9, 'beta2': 0.999, 'epsilon': None}
-
-#     trainer = Trainer(
-#         generator=generator,
-#         discriminator=discr,
-#         feature_extractor=f_ext,
-#         lr_train_dir=lr_train_dir,
-#         hr_train_dir=hr_train_dir,
-#         lr_valid_dir=lr_valid_dir,
-#         hr_valid_dir=hr_valid_dir,
-#         loss_weights=loss_weights,
-#         losses=losses,
-#         learning_rate=learning_rate,
-#         flatness=flatness,
-#         dataname='div2k',
-#         log_dirs=log_dirs,
-#         weights_generator=None,
-#         weights_discriminator=None,
-#         n_validation=40,
-#         adam_optimizer=adam_optimizer,
-#     )
-
-#     print(f'Starting training now for {epochs} epochs')
-#     trainer.train(
-#         epochs=epochs,
-#         steps_per_epoch=batches_per_epoch,
-#         batch_size=batch_size,
-#         monitored_metrics={
-#             'val_generator_PSNR_Y': 'max',
-#             'val_PSNR_Y': 'max',
-#             'val_generator_loss': 'min',
-#         }
-#     )
+print('********************************************************')
 
 def get_arch_name(args):
     return '-'.join([
@@ -168,23 +91,50 @@ def get_checkpoints_if_exist(args, monitored_metric):
 
     return None, None
 
+def make_basename(generator, args, hr_train_patch_size):
+    gen_name = generator.name
+    params = [gen_name]
+    for param in np.sort(list(generator.params.keys())):
+        params.append('{g}{p}'.format(g=param, p=generator.params[param]))
+    params.append('{g}{p}'.format(g='patchsize', p=hr_train_patch_size))
+    params.append('{g}{p}'.format(g='compress', p=args.compression_quality))
+    params.append('{g}{p}'.format(g='sharpen', p=args.sharpen_amount))
+    return '-'.join(params)
+
+        # ('batches_per_epoch', '20', int),
+        # ('hr_patch_size', '128', int),
+        # ('batch_size', '16', int),
+        # ('epsilon', '0.1', float),
+        # ('beta1', '0.9', float),
+        # ('beta2', '0.999', float),
+        # ('lr', '0.0004', float),
+        # ('loss_weight_generator', '1', int),
+        # ('loss_weight_discriminator', '0.0', float),
+        # ('loss_weight_feature_extractor', '0.0', float),
+        # ('lr_decay_factor', '0.5', float),
+        # ('lr_decay_frequency', '100', int),
+        # ('n_validation', '100', int),
+        # ('compression_quality', '50', int),
+        # ('sharpen_amount', '1', int),
+
 def train(
     generator,
     args,
+    hr_train_patch_size,
 ):
     hr_train_dir=pathlib.Path(args.hr_train_dir)
     hr_valid_dir=pathlib.Path(args.hr_valid_dir)
+    lr_train_dir=pathlib.Path(args.lr_train_dir)
+    lr_valid_dir=pathlib.Path(args.lr_valid_dir)
     epochs=args.epochs
-    scale=args.scale
+    # scale=args.scale
     batches_per_epoch=args.batches_per_epoch
-    patch_size=args.patch_size
     batch_size=args.batch_size
     n_validation = args.n_validation
-    compression_quality = args.compression_quality
+    # compression_quality = args.compression_quality
 
-    lr_train_patch_size = patch_size
     layers_to_extract = [5, 9]
-    hr_train_patch_size = lr_train_patch_size * scale
+
     f_ext = Cut_VGG19(patch_size=hr_train_patch_size, layers_to_extract=layers_to_extract)
     discr = Discriminator(patch_size=hr_train_patch_size, kernel_size=3)
 
@@ -213,24 +163,15 @@ def train(
         print(f'Checkpoint was found for weights discriminator: {weights_discriminator}')
     else:
         print('Checkpoint was not found for weights discriminator, starting from scratch')
-    print('****************************************')
-    print('Preparing data')
-    train_dirs, valid_dirs = prepare_data([
-        (hr_train_dir, INTERNAL_DATA / 'train'),
-        (hr_valid_dir, INTERNAL_DATA / 'valid'),
-    ], scale=scale, quality=compression_quality)
-    processed_hr_train_dir, processed_lr_train_dir = train_dirs
-    processed_hr_valid_dir, processed_lr_valid_dir = valid_dirs
-    print('****************************************')
 
     trainer = Trainer(
         generator=generator,
         discriminator=discr,
         feature_extractor=f_ext,
-        lr_train_dir=processed_lr_train_dir,
-        hr_train_dir=processed_hr_train_dir,
-        lr_valid_dir=processed_lr_valid_dir,
-        hr_valid_dir=processed_hr_valid_dir,
+        lr_train_dir=lr_train_dir,
+        hr_train_dir=hr_train_dir,
+        lr_valid_dir=lr_valid_dir,
+        hr_valid_dir=hr_valid_dir,
         loss_weights=loss_weights,
         losses=losses,
         learning_rate=learning_rate,
@@ -240,6 +181,7 @@ def train(
         weights_generator=weights_generator,
         weights_discriminator=weights_discriminator,
         n_validation=n_validation,
+        basename=make_basename(generator, args, hr_train_patch_size),
     )
 
     print(f'Starting training now for {epochs} epochs')
@@ -256,44 +198,25 @@ def train(
     )
     print('Training complete')
 
-def get_model(args):
-    if args.model == 'rdn':
-        C=args.C
-        D=args.D
-        G=args.G
-        T=args.T
-        G0=args.G0
-        scale=args.scale
-        patch_size=args.patch_size
+def get_model(args, lr_train_patch_size):
+    C=args.C
+    D=args.D
+    G=args.G
+    T=args.T
+    G0=args.G0
+    scale=args.scale
 
-        lr_train_patch_size = patch_size
-        arch_params = {
-            'C': C, 
-            'D': D, 
-            'G': G, 
-            'G0':G0, 
-            'T':T, 
-            'x':scale
-        }
+    arch_params = {
+        'C': C, 
+        'D': D, 
+        'G': G, 
+        'G0':G0, 
+        'T':T, 
+        'x':scale
+    }
+    if args.model == 'rdn':
         return RDN(arch_params=arch_params, patch_size=lr_train_patch_size)
     elif args.model == 'rrdn':
-        C=args.C
-        D=args.D
-        G=args.G
-        T=args.T
-        G0=args.G0
-        scale=args.scale
-        patch_size=args.patch_size
-
-        lr_train_patch_size = patch_size
-        arch_params = {
-            'C': C, 
-            'D': D, 
-            'G': G, 
-            'G0':G0, 
-            'T':T, 
-            'x':scale
-        }
         return RRDN(arch_params=arch_params, patch_size=lr_train_patch_size)
     raise Exception(f'No valid model found for {args.model}')
 
@@ -302,8 +225,13 @@ def main(args):
         args_config = vars(args)
         f.write(json.dumps(args_config))
     start = datetime.datetime.now()
-    generator = get_model(args)
-    train(generator, args)
+    scale = args.scale
+    hr_train_patch_size = args.hr_patch_size
+    if hr_train_patch_size / scale != math.floor(hr_train_patch_size / scale):
+        raise Exception(f'Patch size must be divisible by scale which is {scale}')
+    lr_train_patch_size = int(hr_train_patch_size / scale)
+    generator = get_model(args, lr_train_patch_size)
+    train(generator, args, hr_train_patch_size)
     elapsed_time = datetime.datetime.now() - start
     print('Elapsed seconds', elapsed_time.total_seconds())
     with open(OUTPUT / 'output.json', 'w') as f:
@@ -325,10 +253,10 @@ if __name__ == '__main__':
     # rdn-C6-D20-G64-G064-x2_ArtefactCancelling_epoch219.hdf5
     # rdn-C6-D20-G64-G064-x2_PSNR_epoch086.hdf5
     for key, default, type in [
-        # ('lr_train_dir', str(INPUT / 'DIV2K_train_LR_bicubic/X2'), str),
-        # ('lr_valid_dir', str(INPUT / 'DIV2K_valid_LR_bicubic/X2'), str),
-        ('hr_train_dir', str(INPUT / 'DIV2K_train_HR'), str),
-        ('hr_valid_dir', str(INPUT / 'DIV2K_valid_HR'), str),
+        ('lr_train_dir', str(INPUT / 'train/lr'), str),
+        ('lr_valid_dir', str(INPUT / 'valid/lr'), str),
+        ('hr_train_dir', str(INPUT / 'train/hr'), str),
+        ('hr_valid_dir', str(INPUT / 'valid/hr'), str),
         ('model', 'rrdn', str),
         ('C', '6', int),
         ('D', '20', int),
@@ -337,9 +265,9 @@ if __name__ == '__main__':
         ('G0', '64', int),
         ('epochs', '1', int),
         ('scale', '2', int),
-        ('batches_per_epoch', '20', int),
-        ('patch_size', '16', int),
-        ('batch_size', '2', int),
+        ('batches_per_epoch', '500', int),
+        ('hr_patch_size', '128', int),
+        ('batch_size', '16', int),
         ('epsilon', '0.1', float),
         ('beta1', '0.9', float),
         ('beta2', '0.999', float),
@@ -349,8 +277,9 @@ if __name__ == '__main__':
         ('loss_weight_feature_extractor', '0.0', float),
         ('lr_decay_factor', '0.5', float),
         ('lr_decay_frequency', '100', int),
-        ('n_validation', '40', int),
+        ('n_validation', '100', int),
         ('compression_quality', '50', int),
+        ('sharpen_amount', '1', int),
     ]:
         parser.add_argument(f'--{key}', type=type, default=HYPERPARAMETERS.get(key, default))
 

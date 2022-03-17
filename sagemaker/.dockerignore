@@ -1,0 +1,10 @@
+.bronco
+.mypy_cache
+.pytest_cache
+.vscode
+env
+volumes
+volumes.earlymarchtraining
+data
+.ipynb_checkpoints
+__pycache__

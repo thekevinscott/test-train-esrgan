@@ -1,8 +1,10 @@
+import pathlib
+from smart_open import open
 from tqdm import tqdm
 import os
 import numpy as np
 import math
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 from io import BytesIO
 
 def compress_image(im, quality=1):
@@ -10,6 +12,9 @@ def compress_image(im, quality=1):
     im.save(out, format="JPEG", quality=quality)
     out.seek(0)
     return Image.open(out)
+
+def sharpen_image(im, amount=1):
+    return ImageEnhance.Sharpness(im).enhance(amount)
 
 
 def crop_image(im, scale):
@@ -34,7 +39,7 @@ def crop_image(im, scale):
     return im[start_height:end_height, start_width:end_width, :]
 
 
-def prepare_data(dirs, scale=None, quality=50):
+def prepare_data(dirs, scale=None):
     '''
     Provide it a list of tuples. 
     
@@ -50,20 +55,36 @@ def prepare_data(dirs, scale=None, quality=50):
 
     dest_dirs = []
     for src, dest in dirs:
-        HR = (dest / 'hr')
-        LR = (dest / 'lr')
-        HR.mkdir(exist_ok=True, parents=True)
-        LR.mkdir(exist_ok=True, parents=True)
-        dest_dirs.append((HR, LR))
-        for imgname in tqdm(os.listdir(src), desc=f'Processing files in {src}'):
-            im = Image.open(src / imgname).convert('RGB')
-            cropped_im = crop_image(np.array(im), scale)
-            im = Image.fromarray(cropped_im)
-            im.save(dest / 'hr' / imgname)
+        src = pathlib.Path(src)
+        if str(dest).startswith('s3://'):
+            HR = f'{dest}/hr'
+            LR = f'{dest}/lr'
+            dest_dirs.append((HR, LR))
+            files = list(os.listdir(src))
+            for imgname in tqdm(files, desc=f'Processing files in {src}'):
+                im = Image.open(src / imgname).convert('RGB')
+                cropped_im = crop_image(np.array(im), scale)
+                im = Image.fromarray(cropped_im)
+                smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
 
-            smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
-            print('**** Compression quality not (yet) being applied')
-            # smallim = compress_image(smallim, quality=quality)
-            smallim.save(dest / 'lr' / imgname)
+                with open(f'{HR}/{imgname}', 'wb') as f:
+                    im.save(f)
+                with open(f'{LR}/{imgname}', 'wb') as f:
+                    smallim.save(f)
+        else:
+            HR = (dest / 'hr')
+            LR = (dest / 'lr')
+            HR.mkdir(exist_ok=True, parents=True)
+            LR.mkdir(exist_ok=True, parents=True)
+            dest_dirs.append((HR, LR))
+            for imgname in tqdm(os.listdir(src), desc=f'Processing files in {src}'):
+                im = Image.open(src / imgname).convert('RGB')
+                cropped_im = crop_image(np.array(im), scale)
+                im = Image.fromarray(cropped_im)
+                im.save(dest / 'hr' / imgname)
+
+                smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
+                # smallim = compress_image(smallim, quality=quality)
+                smallim.save(dest / 'lr' / imgname)
 
     return dest_dirs
