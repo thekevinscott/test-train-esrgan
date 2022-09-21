@@ -6,5 +6,9 @@ env
 volumes
 volumes.earlymarchtraining
 data
+notebooks
+notebooks/outputs
+notebooks/.ipynb_checkpoints
+notebooks/log_file
 .ipynb_checkpoints
 __pycache__

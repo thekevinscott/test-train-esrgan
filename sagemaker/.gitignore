@@ -7,3 +7,9 @@ volumes.earlymarchtraining
 .vscode
 env
 __pycache__
+.cache
+*.zip
+notebooks/tmp
+notebooks/env-latest-tf
+src/localISR
+notebooks/outputs

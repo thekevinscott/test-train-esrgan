@@ -2,6 +2,12 @@ FROM nvidia/cuda:11.0.3-runtime-ubuntu18.04
 ARG DEBIAN_FRONTEND=noninteractive
 # FROM tensorflow/tensorflow:1.15.5-gpu-py3
 
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+RUN apt-key del 7fa2af80
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
+
 # Upgrade installed packages
 RUN apt-get update && \
     apt-get upgrade -y && \
@@ -22,13 +28,13 @@ RUN apt-get install -y --no-install-recommends \
       curl \
       wget
 
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
-RUN mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
-RUN add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
-RUN apt-get update
-RUN apt-get install libcudnn8=8.3.2.*-1+cuda11.5
-RUN apt-get install libcudnn8-dev=8.3.2.*-1+cuda11.5
+# RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
+# RUN mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+# RUN add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
+# RUN apt-get update
+# RUN apt-get install libcudnn8=8.3.2.*-1+cuda11.5
+# RUN apt-get install libcudnn8-dev=8.3.2.*-1+cuda11.5
 
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
@@ -36,6 +42,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
 
 WORKDIR /code
 RUN git clone https://github.com/thekevinscott/image-super-resolution /code
+# RUN git reset --hard f1189e71938e70fb45971948191a221b2b754665
 
 RUN python3 -m pip install --upgrade pip
 # RUN python3 -m pip install tensorflow==1.15.5
@@ -45,6 +52,8 @@ RUN python3 -m pip install smart_open
 ENV PYTHONPATH /code/ISR/:$PYTHONPATH
 
 RUN python3 setup.py install
+
+RUN python3 -m pip install --upgrade tensorflow-model-optimization==0.6.0
 
 COPY src /code
 

@@ -4,17 +4,23 @@ from tqdm import tqdm
 import os
 import numpy as np
 import math
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image, ImageEnhance
 from io import BytesIO
+import imageio
 
-def compress_image(im, quality=1):
+def write_image(dest: str, im: np.ndarray):
+    imageio.imwrite(dest, (im * 255).astype(np.uint8))
+
+def compress_image(im: np.ndarray, quality=1) -> np.ndarray:
+    im = Image.fromarray((im * 255).astype(np.uint8))
     out = BytesIO()
     im.save(out, format="JPEG", quality=quality)
     out.seek(0)
-    return Image.open(out)
+    return np.asarray(Image.open(out)) / 255.0
 
-def sharpen_image(im, amount=1):
-    return ImageEnhance.Sharpness(im).enhance(amount)
+def sharpen_image(im: np.ndarray, amount=1) -> np.ndarray:
+    im = Image.fromarray((im * 255).astype(np.uint8))
+    return np.asarray(ImageEnhance.Sharpness(im).enhance(amount)) / 255.0
 
 
 def crop_image(im, scale):
@@ -38,6 +44,13 @@ def crop_image(im, scale):
     
     return im[start_height:end_height, start_width:end_width, :]
 
+def get_files(folder):
+    files = []
+    for file in os.listdir(folder):
+        if file.endswith('.gif') or file.endswith('.png') or file.endswith('.jpg') or file.endswith('.jpeg'):
+            files.append(file)
+    return files
+
 
 def prepare_data(dirs, scale=None):
     '''
@@ -54,37 +67,46 @@ def prepare_data(dirs, scale=None):
         raise Exception('Provide scale')
 
     dest_dirs = []
+    errors = []
     for src, dest in dirs:
         src = pathlib.Path(src)
+        dest = pathlib.Path(dest)
         if str(dest).startswith('s3://'):
             HR = f'{dest}/hr'
             LR = f'{dest}/lr'
             dest_dirs.append((HR, LR))
-            files = list(os.listdir(src))
-            for imgname in tqdm(files, desc=f'Processing files in {src}'):
-                im = Image.open(src / imgname).convert('RGB')
-                cropped_im = crop_image(np.array(im), scale)
-                im = Image.fromarray(cropped_im)
-                smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
+            for imgname in tqdm(get_files(src), desc=f'Processing files in {src}'):
+                try:
+                    im = Image.open(src / imgname).convert('RGB')
+                    cropped_im = crop_image(np.array(im), scale)
+                    im = Image.fromarray(cropped_im)
+                    smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
 
-                with open(f'{HR}/{imgname}', 'wb') as f:
-                    im.save(f)
-                with open(f'{LR}/{imgname}', 'wb') as f:
-                    smallim.save(f)
+                    with open(f'{HR}/{imgname}', 'wb') as f:
+                        im.save(f)
+                    with open(f'{LR}/{imgname}', 'wb') as f:
+                        smallim.save(f)
+                except Exception as e:
+                    raise Exception(src / imgname)
+
         else:
             HR = (dest / 'hr')
             LR = (dest / 'lr')
             HR.mkdir(exist_ok=True, parents=True)
             LR.mkdir(exist_ok=True, parents=True)
             dest_dirs.append((HR, LR))
-            for imgname in tqdm(os.listdir(src), desc=f'Processing files in {src}'):
-                im = Image.open(src / imgname).convert('RGB')
-                cropped_im = crop_image(np.array(im), scale)
-                im = Image.fromarray(cropped_im)
-                im.save(dest / 'hr' / imgname)
+            for imgname in tqdm(get_files(src), desc=f'Processing files in {src}'):
+                try:
+                    im = Image.open(src / imgname).convert('RGB')
+                    cropped_im = crop_image(np.array(im), scale)
+                    im = Image.fromarray(cropped_im)
+                    im.save(dest / 'hr' / imgname)
 
-                smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
-                # smallim = compress_image(smallim, quality=quality)
-                smallim.save(dest / 'lr' / imgname)
+                    smallim = im.resize((int(im.size[0] / scale),int(im.size[1] / scale)), Image.ANTIALIAS)
+                    # smallim = compress_image(smallim, quality=quality)
+                    smallim.save(dest / 'lr' / imgname)
+                except Exception as e:
+                    errors.append((src / imgname, e))
+    print('The following errors:', errors)
 
     return dest_dirs

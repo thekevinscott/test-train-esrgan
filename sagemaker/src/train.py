@@ -12,11 +12,13 @@ from ISR.models import Discriminator
 from ISR.models import Cut_VGG19
 from utils import prepare_data
 import tensorflow as tf
+from WeightPruner import WeightPruner
 
 print('================================================================')
 print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 print('================================================================')
 
+SHOULD_CHECK_SIZE = False
 
 # pp = pprint.PrettyPrinter(indent=4)
 
@@ -41,14 +43,23 @@ WEIGHTS_DIR.mkdir(exist_ok=True, parents=True)
 INTERNAL_DATA.mkdir(exist_ok=True, parents=True)
 
 log_dirs = {'logs': str(LOGS_DIR), 'weights': str(WEIGHTS_DIR)}
-for d in [
-    '/opt/ml/input/data/inputData/',
-    '/opt/ml/input/data/inputData/train',
-    '/opt/ml/input/data/inputData/train/hr',
-    CHECKPOINTS,
-    WEIGHTS_DIR,
-]:
-    print(str(d), os.listdir(str(d)))
+if False:
+    for d in [
+        CHECKPOINTS,
+        WEIGHTS_DIR,
+        '/opt/ml/input/data/inputData',
+        '/opt/ml/input/data/inputData/train',
+        '/opt/ml/input/data/inputData/train/hr',
+        '/opt/ml/input/data/inputData/valid',
+        '/opt/ml/input/data/inputData/train/lr',
+        '/opt/ml/input/data/inputData/valid/hr',
+        '/opt/ml/input/data/inputData/valid/lr',
+    ]:
+        print('###########################')
+        files = list(os.listdir(str(d)))
+        print(f'{len(files)} files in', str(d), 'showing first 20:')
+        print(files[0:20])
+        print('###########################')
 
 with open(HYPERPARAMETERS_PATH, 'r') as f:
     HYPERPARAMETERS = json.load(f)
@@ -57,23 +68,24 @@ print('********************************************************')
 print('hyperparams', HYPERPARAMETERS)
 print('********************************************************')
 
-def get_arch_name(args):
-    return '-'.join([
-        args.model,
-        f'C{args.C}',
-        f'D{args.D}',
-        f'G{args.G}',
-        f'G0{args.G0}',
-        f'T{args.T}',
-        f'x{args.scale}',
-    ])
+# def get_arch_name(args):
+#     return '-'.join([
+#         args.model,
+#         f'C{args.C}',
+#         f'D{args.D}',
+#         f'G{args.G}',
+#         f'G0{args.G0}',
+#         f'T{args.T}',
+#         f'x{args.scale}',
+#     ])
 
-def get_checkpoints_if_exist(args, monitored_metric):
-    arch_name = get_arch_name(args)
+def get_checkpoints_if_exist(args, monitored_metric,arch_name):
+    # arch_name = get_arch_name(args)
     if (WEIGHTS_DIR / arch_name).exists():
         weights_generators = []
         weights_discriminators = []
-        for directory in os.listdir(WEIGHTS_DIR / arch_name):
+        timestamps = os.listdir(WEIGHTS_DIR / arch_name)
+        for directory in timestamps:
             files = os.listdir(WEIGHTS_DIR / arch_name / directory)
             for file in files:
                 if file.endswith('hdf5') and monitored_metric in file:
@@ -85,13 +97,19 @@ def get_checkpoints_if_exist(args, monitored_metric):
 
         weights_discriminators.sort()
         weights_generators.sort()
-        print('Generator Weights', weights_generators)
-        print('Discriminator Weights', weights_discriminators)
-        return str(WEIGHTS_DIR / arch_name / weights_generators.pop()), str(WEIGHTS_DIR / arch_name / weights_discriminators.pop())
+        # print('Generator Weights', weights_generators)
+        # print('Discriminator Weights', weights_discriminators)
+        generator_weight = None
+        if len(weights_generators):
+            generator_weight = str(WEIGHTS_DIR / arch_name / weights_generators.pop())
+        discriminator_weight = None
+        if len(weights_discriminators):
+            discriminator_weight = str(WEIGHTS_DIR / arch_name / weights_discriminators.pop())
+        return generator_weight, discriminator_weight
 
     return None, None
 
-def make_basename(generator, args, hr_train_patch_size):
+def make_basename(generator, args, hr_train_patch_size, is_pruner=False):
     gen_name = generator.name
     params = [gen_name]
     for param in np.sort(list(generator.params.keys())):
@@ -99,6 +117,10 @@ def make_basename(generator, args, hr_train_patch_size):
     params.append('{g}{p}'.format(g='patchsize', p=hr_train_patch_size))
     params.append('{g}{p}'.format(g='compress', p=args.compression_quality))
     params.append('{g}{p}'.format(g='sharpen', p=args.sharpen_amount))
+    params.append('{g}{p}'.format(g='data', p=args.dataset))
+    params.append('{g}{p}'.format(g='vary_c', p=args.vary_compression_quality))
+    if is_pruner:
+        params.append('{g}{p}'.format(g='pruner', p=True))
     return '-'.join(params)
 
         # ('batches_per_epoch', '20', int),
@@ -121,6 +143,7 @@ def train(
     generator,
     args,
     hr_train_patch_size,
+    should_check_size=True,
 ):
     hr_train_dir=pathlib.Path(args.hr_train_dir)
     hr_valid_dir=pathlib.Path(args.hr_valid_dir)
@@ -131,7 +154,10 @@ def train(
     batches_per_epoch=args.batches_per_epoch
     batch_size=args.batch_size
     n_validation = args.n_validation
-    # compression_quality = args.compression_quality
+    compression_quality = args.compression_quality
+    sharpen_amount = args.sharpen_amount
+    vary_compression_quality=args.vary_compression_quality
+    with_pruning=args.with_pruning
 
     layers_to_extract = [5, 9]
 
@@ -152,9 +178,11 @@ def train(
     learning_rate = {'initial_value': args.lr, 'decay_factor': args.lr_decay_factor, 'decay_frequency': args.lr_decay_frequency}
 
     flatness = {'min': 0.0, 'max': 0.15, 'increase': 0.01, 'increase_frequency': 5}
+    basename=make_basename(generator, args, hr_train_patch_size)
 
     print('****************************************')
-    weights_generator, weights_discriminator = get_checkpoints_if_exist(args, 'val_generator_PSNR_Y')
+    # weights_generator, weights_discriminator = get_checkpoints_if_exist(args, 'val_generator_PSNR_Y',basename)
+    weights_generator, weights_discriminator = get_checkpoints_if_exist(args, 'best-val_generator_loss',basename)
     if weights_generator:
         print(f'Checkpoint was found for weights generator: {weights_generator}')
     else:
@@ -168,10 +196,10 @@ def train(
         generator=generator,
         discriminator=discr,
         feature_extractor=f_ext,
-        lr_train_dir=lr_train_dir,
-        hr_train_dir=hr_train_dir,
-        lr_valid_dir=lr_valid_dir,
-        hr_valid_dir=hr_valid_dir,
+        lr_train_dir=str(lr_train_dir),
+        hr_train_dir=str(hr_train_dir),
+        lr_valid_dir=str(lr_valid_dir),
+        hr_valid_dir=str(hr_valid_dir),
         loss_weights=loss_weights,
         losses=losses,
         learning_rate=learning_rate,
@@ -181,7 +209,8 @@ def train(
         weights_generator=weights_generator,
         weights_discriminator=weights_discriminator,
         n_validation=n_validation,
-        basename=make_basename(generator, args, hr_train_patch_size),
+        basename=basename,
+        should_check_size=should_check_size,
     )
 
     print(f'Starting training now for {epochs} epochs')
@@ -194,9 +223,45 @@ def train(
             'val_PSNR_Y': 'max',
             'val_generator_loss': 'min',
             'val_generator_PSNR_Y': 'max',
-        }
+        },
+        compression_quality=compression_quality,
+        sharpen_amount=sharpen_amount,
+        vary_compression_quality=vary_compression_quality,
     )
     print('Training complete')
+    if with_pruning:
+        print('Attempt to prune as well')
+        pruner = WeightPruner(
+            generator=trainer.generator,
+            discriminator=trainer.discriminator,
+            feature_extractor=f_ext,
+            lr_train_dir=lr_train_dir,
+            hr_train_dir=hr_train_dir,
+            lr_valid_dir=lr_valid_dir,
+            hr_valid_dir=hr_valid_dir,
+            loss_weights=loss_weights,
+            losses=losses,
+            learning_rate=learning_rate,
+            flatness=flatness,
+            dataname='image_dataset',
+            log_dirs=log_dirs,
+            weights_generator=trainer.generator,
+            weights_discriminator=trainer.discriminator,
+            n_validation=n_validation,
+            basename=make_basename(generator, args, hr_train_patch_size, True),
+        )
+        pruner.train(
+            epochs=1,
+            steps_per_epoch=batches_per_epoch,
+            batch_size=batch_size,
+            monitored_metrics={
+                'val_loss': 'min',
+                'val_PSNR_Y': 'max',
+                'val_generator_loss': 'min',
+                'val_generator_PSNR_Y': 'max',
+            },
+
+        )
 
 def get_model(args, lr_train_patch_size):
     C=args.C
@@ -228,10 +293,10 @@ def main(args):
     scale = args.scale
     hr_train_patch_size = args.hr_patch_size
     if hr_train_patch_size / scale != math.floor(hr_train_patch_size / scale):
-        raise Exception(f'Patch size must be divisible by scale which is {scale}')
+        raise Exception(f'Patch size must be divisible by scale which is {scale}. hr_train_patch_size is {hr_train_patch_size} which would result in a float of {hr_train_patch_size / scale}')
     lr_train_patch_size = int(hr_train_patch_size / scale)
     generator = get_model(args, lr_train_patch_size)
-    train(generator, args, hr_train_patch_size)
+    train(generator, args, hr_train_patch_size, should_check_size=SHOULD_CHECK_SIZE)
     elapsed_time = datetime.datetime.now() - start
     print('Elapsed seconds', elapsed_time.total_seconds())
     with open(OUTPUT / 'output.json', 'w') as f:
@@ -261,7 +326,7 @@ if __name__ == '__main__':
         ('C', '6', int),
         ('D', '20', int),
         ('G', '64', int),
-        ('T', '10', float),
+        ('T', '10', int),
         ('G0', '64', int),
         ('epochs', '1', int),
         ('scale', '2', int),
@@ -278,8 +343,11 @@ if __name__ == '__main__':
         ('lr_decay_factor', '0.5', float),
         ('lr_decay_frequency', '100', int),
         ('n_validation', '100', int),
-        ('compression_quality', '50', int),
-        ('sharpen_amount', '1', int),
+        ('compression_quality', '100', int),
+        ('vary_compression_quality', False, bool),
+        ('sharpen_amount', '0', int),
+        ('dataset', '', str),
+        ('with_pruning', False, bool),
     ]:
         parser.add_argument(f'--{key}', type=type, default=HYPERPARAMETERS.get(key, default))
 
