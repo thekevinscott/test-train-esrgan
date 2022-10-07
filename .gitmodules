@@ -1,9 +1,0 @@
-[submodule "training/--force"]
-	path = training/--force
-	url = https://github.com/idealo/image-super-resolution
-[submodule "training/isr"]
-	path = training/isr
-	url = https://github.com/idealo/image-super-resolution
-[submodule "training/image-super-resolution"]
-	path = training/isr
-	url = https://github.com/idealo/image-super-resolution

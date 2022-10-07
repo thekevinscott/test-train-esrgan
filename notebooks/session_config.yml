@@ -1,0 +1,91 @@
+2022-04-12_1040:
+  discriminator:
+    name: srgan-large
+    weights_discriminator: null
+  feature_extractor:
+    layers:
+    - 5
+    - 9
+    name: vgg19
+  generator:
+    name: rrdn
+    parameters:
+      C: 4
+      D: 3
+      G: 4
+      G0: 64
+      T: 10
+      x: 2
+    weights_generator: null
+  training_parameters:
+    adam_optimizer:
+      beta1: 0.9
+      beta2: 0.999
+      epsilon: null
+    basename: rrdn-C4-D3-G4-G064-T10-x2-patchsize128-compress100-sharpen0-data
+    batch_size: 16
+    dataname: image_dataset
+    fallback_save_every_n_epochs: 2
+    flatness:
+      increase: 0.01
+      increase_frequency: 5
+      max: 0.15
+      min: 0.0
+    hr_train_dir: !!python/object/apply:pathlib.PosixPath
+    - /
+    - opt
+    - ml
+    - input
+    - data
+    - inputData
+    - train
+    - hr
+    hr_valid_dir: !!python/object/apply:pathlib.PosixPath
+    - /
+    - opt
+    - ml
+    - input
+    - data
+    - inputData
+    - valid
+    - hr
+    learning_rate:
+      decay_factor: 0.5
+      decay_frequency: 100
+      initial_value: 0.0004
+    log_dirs:
+      logs: /logs
+      weights: /opt/ml/checkpoints/weights
+    loss_weights:
+      discriminator: 0.0
+      feature_extractor: 0.0
+      generator: 1
+    losses:
+      discriminator: binary_crossentropy
+      feature_extractor: mse
+      generator: mae
+    lr_patch_size: 64
+    lr_train_dir: !!python/object/apply:pathlib.PosixPath
+    - /
+    - opt
+    - ml
+    - input
+    - data
+    - inputData
+    - train
+    - lr
+    lr_valid_dir: !!python/object/apply:pathlib.PosixPath
+    - /
+    - opt
+    - ml
+    - input
+    - data
+    - inputData
+    - valid
+    - lr
+    metrics:
+      generator: !!python/name:ISR.utils.metrics.PSNR_Y ''
+    n_validation: 100
+    should_check_size: true
+    starting_epoch: 0
+    steps_per_epoch: 20
