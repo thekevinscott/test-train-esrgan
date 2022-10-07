@@ -352,6 +352,7 @@ class WeightPruner:
 
             flatness = self._flatness_scheduler(epoch)
             if flatness:
+                self.logger.info('I AM WEIGHT PRIUNER')
                 self.logger.info('Current flatness treshold: {}'.format(flatness))
 
             epoch_start = time()

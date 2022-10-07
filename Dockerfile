@@ -1,12 +1,20 @@
-FROM nvidia/cuda:11.0.3-runtime-ubuntu18.04
+# FROM nvidia/cuda:11.0.3-runtime-ubuntu18.04
+# FROM nvidia/cuda:11.4.2-runtime-ubuntu20.04
+FROM tensorflow/tensorflow:2.10.0-gpu
 ARG DEBIAN_FRONTEND=noninteractive
 # FROM tensorflow/tensorflow:1.15.5-gpu-py3
 
-RUN rm /etc/apt/sources.list.d/cuda.list
-RUN rm /etc/apt/sources.list.d/nvidia-ml.list
-RUN apt-key del 7fa2af80
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
+####### Old
+# RUN rm /etc/apt/sources.list.d/cuda.list
+# RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+
+# RUN apt-key del 7fa2af80
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64/7fa2af80.pub
+
+####### Old
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
 
 # Upgrade installed packages
 RUN apt-get update && \
@@ -53,11 +61,10 @@ ENV PYTHONPATH /code/ISR/:$PYTHONPATH
 
 RUN python3 setup.py install
 
-RUN python3 -m pip install --upgrade tensorflow-model-optimization==0.6.0
+RUN python3 -m pip install --upgrade tensorflow-model-optimization==0.7.3
 
 COPY src /code
 
 ENV PATH "$PATH:/code"
 
 RUN python3 --version
-
