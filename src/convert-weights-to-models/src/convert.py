@@ -21,7 +21,19 @@ def get_model(model, arch_params):
     raise Exception('No valid model found for ' + model)
     
 def get_params(folder):
-    arch, C, D, G, G0, T, x, _, _2, _3, _4, _5 = folder.split('-')
+    parts = folder.split('-')
+    arch = parts[0]
+    C = parts[1]
+    D = parts[2]
+    G = parts[3]
+    G0 = parts[4]
+    T = parts[5]
+    x = parts[6]
+    _patchsize = parts[7]
+    _compress = parts[8]
+    _sharpen = parts[9]
+    data = parts[10].split('data').pop()
+    _vary_compression = parts[11]
 
     arch_params = {
         'C': int(C[1:]),
@@ -32,7 +44,7 @@ def get_params(folder):
     }
     if arch == 'rrdn':
         arch_params['T'] = int(T[1:])
-    return arch, arch_params
+    return arch, arch_params, data
 
 # def save_model(weights, output, arch, x, C, D, G, G0, T):
 #     model.model.load_weights('/code/weights/' + weights)
@@ -50,8 +62,6 @@ def convert_weight_files_to_model_files():
     root = output / 'weights'
     target = output / 'models'
 
-    if len(os.listdir(target)) != 0:
-        raise Exception('target directory is not empty')
     if len(os.listdir(root)) == 0:
         raise Exception('weights directory is empty. have you bound a local volume of weights to the docker container?')
 
@@ -59,27 +69,41 @@ def convert_weight_files_to_model_files():
     errs = []
 
     for folder in os.listdir(root):
-        arch, arch_params = get_params(folder)
-        weights += [(w, arch, arch_params) for w in get_weights(root / folder)]
+        arch, arch_params, data = get_params(folder)
+        weights += [(w, arch, arch_params, data) for w in get_weights(root / folder)]
         
     weights = weights[0:]
         
     i = 0
-    for weight, arch, arch_params in tqdm(weights):
+    processed = [] 
+    skipped = [] 
+    for weight, arch, arch_params, data in tqdm(weights):
         try:
-            tf.keras.backend.clear_session() # needed for https://github.com/tensorflow/tfjs/issues/755#issuecomment-489665951
-            model = get_model(arch, arch_params)
-            model.model.load_weights(weight)
-            weight_name = weight.split('/')[-3:]
-            weight_name = '/'.join(weight_name).split('.')[0] + '.h5'
-            target_path = target / weight_name
-            os.makedirs('/'.join(str(target_path).split('/')[0:-1]), exist_ok=True)
-            model.model.save(target_path)       
             i += 1
+            weight_name = '/'.join(weight.split('/')[-3:])
+            target_path = target / weight_name
+            if os.path.exists(target_path):
+                skipped.append(weight_name)
+            else:
+                tf.keras.backend.clear_session() # needed for https://github.com/tensorflow/tfjs/issues/755#issuecomment-489665951
+                model = get_model(arch, arch_params)
+                model.model.load_weights(weight)
+                weight_name = '/'.join(weight_name).split('.')[0] + '.h5'
+                os.makedirs('/'.join(str(target_path).split('/')[0:-1]), exist_ok=True)
+                model.model.save(target_path)       
+                processed.append(weight_name)
         except Exception as e:
             errs += [(weight, e)]
             
-    print(f'Successfully processed {i} files')
+    print(f'Successfully processed {len(processed)} files, skipped {skipped} files.')
+    if len(processed):
+        print('The files processed were:')
+        for weight in processed:
+            print(f'* {weight}')
+    if len(skipped):
+        print('The files skipped were:')
+        for weight in skipped:
+            print(f'* {weight}')
     if len(errs) > 0:
         print(f'The following {len(errs)} weights could not be processed\n-------------------------------')
         for err, e in errs:
