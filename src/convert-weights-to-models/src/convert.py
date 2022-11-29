@@ -54,7 +54,9 @@ def get_weights(folder):
     weights = []
     for date_folder in os.listdir(folder):
         date_folder = folder / date_folder
-        weights += [str(date_folder / f) for f in os.listdir(date_folder) if 'srgan' not in f and f.endswith('hdf5')]
+        for f in os.listdir(date_folder):
+            if 'srgan' not in f and f.endswith('hdf5'):
+                weights += [str(date_folder / f)]
     return weights
 
 def convert_weight_files_to_model_files():
@@ -80,7 +82,8 @@ def convert_weight_files_to_model_files():
     for weight, arch, arch_params, data in tqdm(weights):
         try:
             i += 1
-            weight_name = '/'.join(weight.split('/')[-3:])
+            weight_name = weight.split('/')[-3:]
+            weight_name = '/'.join(weight_name).split('.')[0] + '.h5'
             target_path = target / weight_name
             if os.path.exists(target_path):
                 skipped.append(weight_name)
@@ -88,22 +91,25 @@ def convert_weight_files_to_model_files():
                 tf.keras.backend.clear_session() # needed for https://github.com/tensorflow/tfjs/issues/755#issuecomment-489665951
                 model = get_model(arch, arch_params)
                 model.model.load_weights(weight)
-                weight_name = '/'.join(weight_name).split('.')[0] + '.h5'
                 os.makedirs('/'.join(str(target_path).split('/')[0:-1]), exist_ok=True)
                 model.model.save(target_path)       
                 processed.append(weight_name)
         except Exception as e:
             errs += [(weight, e)]
             
-    print(f'Successfully processed {len(processed)} files, skipped {skipped} files.')
+    print(f'Successfully processed {len(processed)} files, skipped {len(skipped)} files.')
     if len(processed):
+        print('***********')
         print('The files processed were:')
         for weight in processed:
             print(f'* {weight}')
+        print('***********')
     if len(skipped):
+        print('***********')
         print('The files skipped were:')
         for weight in skipped:
             print(f'* {weight}')
+        print('***********')
     if len(errs) > 0:
         print(f'The following {len(errs)} weights could not be processed\n-------------------------------')
         for err, e in errs:
